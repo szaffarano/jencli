@@ -1,6 +1,12 @@
 # README
 
-Use:
+## Install
+
+```sh
+$ pip3 install https://github.com/szaffarano/jencli/archive/main.zip
+```
+
+## Usage
 
 ```sh
 $ export JENKINS_URL=<jenkins url>
