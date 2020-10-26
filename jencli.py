@@ -1,12 +1,15 @@
 from click import Path
 from click import command
+from click import echo
 from click import group
 from click import make_pass_decorator
 from click import option
 from click import pass_context
+from click import style as s
 
 import jenkins
 import json
+import sys
 
 from datetime import datetime
 
@@ -68,7 +71,12 @@ def info(ctx, jobName, jobNumber, output, verbose):
         'job': jobName
     }
 
-    info = server.get_job_info(jobName)
+    try:
+        info = server.get_job_info(jobName)
+    except jenkins.JenkinsException:
+        message = sys.exc_info()[1]
+        echo(f'Error: {s(str(message), fg="red", bold="true")}')
+        sys.exit(1)
 
     if jobNumber == 0:
         jobNumber = info.get('lastCompletedBuild', {}).get("number")
@@ -82,7 +90,6 @@ def info(ctx, jobName, jobNumber, output, verbose):
         healthReport.append(cleanup(hr, HEALTH_SKIP_FIELDS))
 
     projectReport['healthReport'] = healthReport
-
 
     testReport = server.get_build_test_report(jobName, jobNumber)
     if testReport is not None:
