@@ -43,7 +43,7 @@ CONTEXT_SETTINGS = dict(
         envvar='JENKINS_USERNAME',
         help='Jenkins username.')
 @option('-t', '--token', metavar='<token>', required=True,
-        envvar='JENKINS_TOKEN',
+        envvar='JENKINS_TOKEN', prompt=True,
         help='Jenkins access token.')
 @pass_context
 def cli(ctx, url, user, token):
