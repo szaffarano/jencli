@@ -1,3 +1,4 @@
+from io import StringIO
 from click import Path
 from click import command
 from click import echo
@@ -10,8 +11,11 @@ from click import style as s
 import jenkins
 import json
 import sys
+import io
+import re
 
 from datetime import datetime
+
 
 # A test case has the following properties:
 #   'testActions', 'age', 'className', 'duration', 'errorDetails',
@@ -49,32 +53,33 @@ def cli(ctx, url, user, token):
 
 
 @cli.command('info')
-@option('-j', 'jobName', metavar='<jenkins job name>', required=True,
+@option('-j', '--jobname', metavar='<jenkins job name>', required=True,
         help='Jenkins job name.')
-@option('-n', 'jobNumber', metavar='<jenkins job number>', default=0,
+@option('-n', '--jobnumber', metavar='<jenkins job number>', default=0,
         help='Jenkins job number, default latest job.')
 @option('-o', '--output', metavar='<output file>',
         help='Output file or stdout by default.')
 @option('-v', '--verbose', is_flag=True, default=False)
+@option('-F', '--findflakes', is_flag=True, default=False)
 @pass_context
-def info(ctx, jobName, jobNumber, output, verbose):
+def info(ctx, jobname, jobnumber, output, verbose, findflakes):
     server = ctx.obj['server']
 
     projectReport = {
-        'job': jobName
+        'job': jobname
     }
 
     try:
-        info = server.get_job_info(jobName)
+        info = server.get_job_info(jobname)
     except jenkins.JenkinsException:
         message = sys.exc_info()[1]
         echo(f'Error: {s(str(message), fg="red", bold="true")}')
         sys.exit(1)
 
-    if jobNumber == 0:
-        jobNumber = info.get('lastCompletedBuild', {}).get("number")
+    if jobnumber == 0:
+        jobnumber = info.get('lastCompletedBuild', {}).get("number")
 
-    build = buildInfo(server, jobName, jobNumber)
+    build = buildInfo(server, jobname, jobnumber)
 
     projectReport['build'] = extractBuildInfo(build)
 
@@ -84,7 +89,7 @@ def info(ctx, jobName, jobNumber, output, verbose):
 
     projectReport['healthReport'] = healthReport
 
-    testReport = server.get_build_test_report(jobName, jobNumber)
+    testReport = server.get_build_test_report(jobname, jobnumber)
     if testReport is not None:
         projectReport['passTestsCount'] = testReport.get('passCount', 'N/A')
         projectReport['failTestsCount'] = testReport.get('failCount', 'N/A')
@@ -99,6 +104,12 @@ def info(ctx, jobName, jobNumber, output, verbose):
                     filter(lambda c: c.get('status') in [
                            'REGRESSION', 'FAILED'], suite.get('cases'))
                 ]
+
+    if findflakes:
+        flakes = findFlakesInLog(
+            server.get_build_console_output(jobname, jobnumber))
+        if len(flakes) > 0:
+            projectReport.setdefault("flakes", flakes)
 
     jsonReport = json.dumps(projectReport, indent=2)
     if output is not None:
@@ -115,7 +126,6 @@ def buildInfo(server, jobName, jobNumber):
 def toDate(timestamp):
     if timestamp != 0:
         return datetime.fromtimestamp(timestamp/1000).strftime('%b %d %Y %H:%M:%S')
-
     return 'N/A'
 
 
@@ -133,3 +143,31 @@ def extractBuildInfo(build):
         'url':  build.get('url'),
         'result':  build.get('result')
     }
+
+
+def findFlakesInLog(log):
+    FLAKES_START = re.compile('.*\[WARNING\]\s(Flakes:)')
+    FLAKES_END = re.compile('.*\[WARNING\]\sTests\srun:(.*)')
+    FLAKY_TEST = re.compile('.*\[WARNING\]\s(.*)')
+
+    flakesFound = False
+    flakes = []
+    for line in io.StringIO(log).readlines():
+        line = line.replace('\n', '')
+
+        if flakesFound:
+            if FLAKES_END.match(line) is not None:
+                flakesFound = False
+            else:
+                m = FLAKY_TEST.match(line)
+                if m is not None:
+                    flakes.append(m.groups()[0])
+        elif FLAKES_START.match(line) is not None:
+            if flakesFound:
+                raise Exception("Already detected a flakes start.")
+            flakesFound = True
+
+    if flakesFound:
+        raise Exception("Inconsistent flakes report.")
+
+    return flakes
