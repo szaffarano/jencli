@@ -13,13 +13,14 @@ import sys
 
 from datetime import datetime
 
- # A test case has the following properties:
- #   'testActions', 'age', 'className', 'duration', 'errorDetails', 
- #   'errorStackTrace', 'failedSince', 'name', 'skipped', 'skippedMessage', 
- #   'status', 'stderr', 'stdout'
- #
- # Remove the ones that aren't relevant.
-CASE_SKIP_FIELDS = ['testActions', 'errorStackTrace', 'stderr', 'stdout', 'duration', 'failedSince', 'skipped', 'skippedMessage']
+# A test case has the following properties:
+#   'testActions', 'age', 'className', 'duration', 'errorDetails',
+#   'errorStackTrace', 'failedSince', 'name', 'skipped', 'skippedMessage',
+#   'status', 'stderr', 'stdout'
+#
+# Remove the ones that aren't relevant.
+CASE_SKIP_FIELDS = ['testActions', 'errorStackTrace', 'stderr',
+                    'stdout', 'duration', 'failedSince', 'skipped', 'skippedMessage']
 
 # Same for health report
 HEALTH_SKIP_FIELDS = ['iconClassName', 'iconUrl']
@@ -29,19 +30,17 @@ CONTEXT_SETTINGS = dict(
     ignore_unknown_options=False
 )
 
+
 @group(context_settings=CONTEXT_SETTINGS)
-@option(
-    '-U', '--url', metavar='<url>', required=True, envvar='JENKINS_URL',
-    help='Jenkins url.'
-)
-@option(
-    '-u', '--user', metavar='<username>', required=True, envvar='JENKINS_USERNAME',
-    help='Jenkins username.'
-)
-@option(
-    '-t', '--token', metavar='<token>', required=True, envvar='JENKINS_TOKEN',
-    help='Jenkins access token.'
-)
+@option('-U', '--url', metavar='<url>', required=True,
+        envvar='JENKINS_URL',
+        help='Jenkins url.')
+@option('-u', '--user', metavar='<username>', required=True,
+        envvar='JENKINS_USERNAME',
+        help='Jenkins username.')
+@option('-t', '--token', metavar='<token>', required=True,
+        envvar='JENKINS_TOKEN',
+        help='Jenkins access token.')
 @pass_context
 def cli(ctx, url, user, token):
     ctx.ensure_object(dict)
@@ -50,18 +49,12 @@ def cli(ctx, url, user, token):
 
 
 @cli.command('info')
-@option(
-    '-j', 'jobName', metavar='<jenkins job name>', required=True,
-    help='Jenkins job name.'
-)
-@option(
-    '-n', 'jobNumber', metavar='<jenkins job number>', default=0,
-    help='Jenkins job number, default latest job.'
-)
-@option(
-    '-o', '--output', metavar='<output file>',
-    help='Output file or stdout by default.'
-)
+@option('-j', 'jobName', metavar='<jenkins job name>', required=True,
+        help='Jenkins job name.')
+@option('-n', 'jobNumber', metavar='<jenkins job number>', default=0,
+        help='Jenkins job number, default latest job.')
+@option('-o', '--output', metavar='<output file>',
+        help='Output file or stdout by default.')
 @option('-v', '--verbose', is_flag=True, default=False)
 @pass_context
 def info(ctx, jobName, jobNumber, output, verbose):
@@ -103,7 +96,8 @@ def info(ctx, jobName, jobNumber, output, verbose):
             for suite in testReport.get('suites'):
                 failedCases += [
                     cleanup(case, CASE_SKIP_FIELDS) for case in
-                        filter(lambda c: c.get('status') in ['REGRESSION', 'FAILED'], suite.get('cases'))
+                    filter(lambda c: c.get('status') in [
+                           'REGRESSION', 'FAILED'], suite.get('cases'))
                 ]
 
     jsonReport = json.dumps(projectReport, indent=2)
@@ -113,14 +107,17 @@ def info(ctx, jobName, jobNumber, output, verbose):
     else:
         print(jsonReport)
 
+
 def buildInfo(server, jobName, jobNumber):
     return server.get_build_info(jobName, jobNumber, depth=0)
+
 
 def toDate(timestamp):
     if timestamp != 0:
         return datetime.fromtimestamp(timestamp/1000).strftime('%b %d %Y %H:%M:%S')
 
     return 'N/A'
+
 
 def cleanup(case, fields):
     for prop in fields:
@@ -129,9 +126,10 @@ def cleanup(case, fields):
 
     return case
 
+
 def extractBuildInfo(build):
     return {
         'date': toDate(build.get('timestamp', 0)),
         'url':  build.get('url'),
         'result':  build.get('result')
-     }
+    }
