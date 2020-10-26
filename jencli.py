@@ -26,7 +26,7 @@ CONTEXT_SETTINGS = dict(
     ignore_unknown_options=False
 )
 
-@group()
+@group(context_settings=CONTEXT_SETTINGS)
 @option(
     '-U', '--url', metavar='<url>', required=True, envvar='JENKINS_URL',
     help='Jenkins url'
@@ -48,8 +48,12 @@ def cli(ctx, url, user, token):
 
 @cli.command('info')
 @option(
-    '-j', 'job', metavar='<jenkins job>', required=True,
-    help='Jenkins job'
+    '-j', 'jobName', metavar='<jenkins job name>', required=True,
+    help='Jenkins job name'
+)
+@option(
+    '-n', 'jobNumber', metavar='<jenkins job number>', default=0,
+    help='Jenkins job name'
 )
 @option(
     '-o', '--output', metavar='<output file>',
@@ -57,18 +61,21 @@ def cli(ctx, url, user, token):
 )
 @option('-v', '--verbose', is_flag=True, default=False)
 @pass_context
-def info(ctx, job, output, verbose):
+def info(ctx, jobName, jobNumber, output, verbose):
     server = ctx.obj['server']
 
     projectReport = {
-        'job': job
+        'job': jobName
     }
 
-    info = server.get_job_info(job)
+    info = server.get_job_info(jobName)
 
-    lastCompletedBuild = buildInfo(server, job, info.get('lastCompletedBuild', {}))
+    if jobNumber == 0:
+        jobNumber = info.get('lastCompletedBuild', {}).get("number")
 
-    projectReport['lastCompletedBuild'] = extractBuildInfo(lastCompletedBuild)
+    build = buildInfo(server, jobName, jobNumber)
+
+    projectReport['build'] = extractBuildInfo(build)
 
     healthReport = []
     for hr in info.get('healthReport', {}):
@@ -76,12 +83,13 @@ def info(ctx, job, output, verbose):
 
     projectReport['healthReport'] = healthReport
 
-    testReport = server.get_build_test_report(job, lastCompletedBuild.get('number'))
+
+    testReport = server.get_build_test_report(jobName, jobNumber)
     if testReport is not None:
         projectReport['passTestsCount'] = testReport.get('passCount', 'N/A')
         projectReport['failTestsCount'] = testReport.get('failCount', 'N/A')
         projectReport['skipTestsCount'] = testReport.get('skipCount', 'N/A')
-        projectReport['testReportLink'] = f'{lastCompletedBuild.get("url")}testReport'
+        projectReport['testReportLink'] = f'{build.get("url")}testReport'
 
         if testReport.get('failCount', 0) > 0:
             failedCases = projectReport.setdefault('failedCases', [])
@@ -98,10 +106,8 @@ def info(ctx, job, output, verbose):
     else:
         print(jsonReport)
 
-def buildInfo(server, job, build):
-    if build is not None:
-        return server.get_build_info(job, build['number'], depth=0)
-    return {}
+def buildInfo(server, jobName, jobNumber):
+    return server.get_build_info(jobName, jobNumber, depth=0)
 
 def toDate(timestamp):
     if timestamp != 0:
