@@ -1,14 +1,13 @@
 from click import Path
-from click import echo
-from click import style as s
-from click import argument
-from click import option
 from click import command
 from click import group
-from click import pass_context
 from click import make_pass_decorator
+from click import option
+from click import pass_context
+
 import jenkins
 import json
+
 from datetime import datetime
 
  # A test case has the following properties:
@@ -27,18 +26,17 @@ CONTEXT_SETTINGS = dict(
     ignore_unknown_options=False
 )
 
-
 @group()
 @option(
-    '-U', '--url', metavar='<url>', required=True,
+    '-U', '--url', metavar='<url>', required=True, envvar='JENKINS_URL',
     help='Jenkins url'
 )
 @option(
-    '-u', '--user', metavar='<username>', required=True,
+    '-u', '--user', metavar='<username>', required=True, envvar='JENKINS_USERNAME',
     help='Jenkins username'
 )
 @option(
-    '-t', '--token', metavar='<token>', required=True,
+    '-t', '--token', metavar='<token>', required=True, envvar='JENKINS_TOKEN',
     help='Jenkins access token'
 )
 @pass_context
