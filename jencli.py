@@ -29,15 +29,15 @@ CONTEXT_SETTINGS = dict(
 @group(context_settings=CONTEXT_SETTINGS)
 @option(
     '-U', '--url', metavar='<url>', required=True, envvar='JENKINS_URL',
-    help='Jenkins url'
+    help='Jenkins url.'
 )
 @option(
     '-u', '--user', metavar='<username>', required=True, envvar='JENKINS_USERNAME',
-    help='Jenkins username'
+    help='Jenkins username.'
 )
 @option(
     '-t', '--token', metavar='<token>', required=True, envvar='JENKINS_TOKEN',
-    help='Jenkins access token'
+    help='Jenkins access token.'
 )
 @pass_context
 def cli(ctx, url, user, token):
@@ -49,15 +49,15 @@ def cli(ctx, url, user, token):
 @cli.command('info')
 @option(
     '-j', 'jobName', metavar='<jenkins job name>', required=True,
-    help='Jenkins job name'
+    help='Jenkins job name.'
 )
 @option(
     '-n', 'jobNumber', metavar='<jenkins job number>', default=0,
-    help='Jenkins job name'
+    help='Jenkins job number, default latest job.'
 )
 @option(
     '-o', '--output', metavar='<output file>',
-    help='Output file'
+    help='Output file or stdout by default.'
 )
 @option('-v', '--verbose', is_flag=True, default=False)
 @pass_context
