@@ -53,63 +53,59 @@ def cli(ctx, url, user, token):
 
 
 @cli.command('info')
-@option('-j', '--jobname', metavar='<jenkins job name>', required=True,
+@option('-j', '--jobname', metavar='<job name>', required=True,
         help='Jenkins job name.')
-@option('-n', '--jobnumber', metavar='<jenkins job number>', default=0,
-        help='Jenkins job number, default latest job.')
+@option('-b', '--buildnumber', metavar='<build number>', default='latest',
+        help='Jenkins build number, default latest job. It could be a number or a keyword: latest, last_N')
 @option('-o', '--output', metavar='<output file>',
         help='Output file or stdout by default.')
-@option('-v', '--verbose', is_flag=True, default=False)
 @option('-F', '--findflakes', is_flag=True, default=False)
 @pass_context
-def info(ctx, jobname, jobnumber, output, verbose, findflakes):
+def info(ctx, jobname, buildnumber, output, findflakes):
     server = ctx.obj['server']
+    lastBuildsParser = re.compile('^last_([0-9]+)$')
+    buildNumberParser = re.compile('^([0-9]+)$')
+    lastBuildsToQuery = -1
 
     projectReport = {
         'job': jobname
     }
 
+    buildNumberMatch = buildNumberParser.match(buildnumber)
+    lastBuildsMatch = lastBuildsParser.match(buildnumber)
+    if buildNumberMatch is not None:
+        buildnumber = int(buildNumberMatch.group(1))
+    elif lastBuildsMatch is not None:
+        lastBuildsToQuery = int(lastBuildsMatch.group(1))
+    elif buildnumber == 'latest':
+        lastBuildsToQuery = 1
+    else:
+        echo(f'Error: {s(buildnumber, fg="red", bold="true")}: invalid format')
+        sys.exit(1)
+
     try:
-        info = server.get_job_info(jobname)
+        jobInfo = server.get_job_info(jobname)
     except jenkins.JenkinsException:
         message = sys.exc_info()[1]
         echo(f'Error: {s(str(message), fg="red", bold="true")}')
         sys.exit(1)
 
-    if jobnumber == 0:
-        jobnumber = info.get('lastCompletedBuild', {}).get("number")
-
-    build = buildInfo(server, jobname, jobnumber)
-
-    projectReport['build'] = extractBuildInfo(build)
-
     healthReport = []
-    for hr in info.get('healthReport', {}):
+    for hr in jobInfo.get('healthReport', {}):
         healthReport.append(cleanup(hr, HEALTH_SKIP_FIELDS))
+    projectReport.setdefault('healthReport', healthReport)
 
-    projectReport['healthReport'] = healthReport
-
-    testReport = server.get_build_test_report(jobname, jobnumber)
-    if testReport is not None:
-        projectReport['passTestsCount'] = testReport.get('passCount', 'N/A')
-        projectReport['failTestsCount'] = testReport.get('failCount', 'N/A')
-        projectReport['skipTestsCount'] = testReport.get('skipCount', 'N/A')
-        projectReport['testReportLink'] = f'{build.get("url")}testReport'
-
-        if testReport.get('failCount', 0) > 0:
-            failedCases = projectReport.setdefault('failedCases', [])
-            for suite in testReport.get('suites'):
-                failedCases += [
-                    cleanup(case, CASE_SKIP_FIELDS) for case in
-                    filter(lambda c: c.get('status') in [
-                           'REGRESSION', 'FAILED'], suite.get('cases'))
-                ]
-
-    if findflakes:
-        flakes = findFlakesInLog(
-            server.get_build_console_output(jobname, jobnumber))
-        if len(flakes) > 0:
-            projectReport.setdefault("flakes", flakes)
+    builds = projectReport.setdefault('builds', [])
+    if lastBuildsToQuery != -1:
+        buildnumber = jobInfo.get('lastCompletedBuild', {}).get("number")
+        while lastBuildsToQuery > 0:
+            builds.append(buildReport(
+                jobname, buildnumber - lastBuildsToQuery + 1, findflakes, server))
+            lastBuildsToQuery = lastBuildsToQuery - 1
+    else:
+        builds.append(
+            buildReport(jobname, buildnumber, findflakes, server)
+        )
 
     jsonReport = json.dumps(projectReport, indent=2)
     if output is not None:
@@ -117,10 +113,6 @@ def info(ctx, jobname, jobnumber, output, verbose, findflakes):
             f.write(jsonReport)
     else:
         print(jsonReport)
-
-
-def buildInfo(server, jobName, jobNumber):
-    return server.get_build_info(jobName, jobNumber, depth=0)
 
 
 def toDate(timestamp):
@@ -171,3 +163,36 @@ def findFlakesInLog(log):
         raise Exception("Inconsistent flakes report.")
 
     return flakes
+
+
+def buildReport(jobname, buildnumber, findflakes, server):
+    buildReport = {}
+
+    build = server.get_build_info(jobname, buildnumber, depth=0)
+
+    buildReport.setdefault('info', extractBuildInfo(build))
+    buildReport.setdefault('name', build.get("displayName"))
+
+    testReport = server.get_build_test_report(jobname, buildnumber)
+    if testReport is not None:
+        buildReport['passTestsCount'] = testReport.get('passCount', 'N/A')
+        buildReport['failTestsCount'] = testReport.get('failCount', 'N/A')
+        buildReport['skipTestsCount'] = testReport.get('skipCount', 'N/A')
+        buildReport['testReportLink'] = f'{build.get("url")}testReport'
+
+        if testReport.get('failCount', 0) > 0:
+            failedCases = buildReport.setdefault('failedCases', [])
+            for suite in testReport.get('suites'):
+                failedCases += [
+                    cleanup(case, CASE_SKIP_FIELDS) for case in
+                    filter(lambda c: c.get('status') in [
+                           'REGRESSION', 'FAILED'], suite.get('cases'))
+                ]
+
+    if findflakes:
+        flakes = findFlakesInLog(
+            server.get_build_console_output(jobname, buildnumber))
+        if len(flakes) > 0:
+            buildReport.setdefault("flakes", flakes)
+
+    return buildReport
