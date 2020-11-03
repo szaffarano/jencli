@@ -139,7 +139,7 @@ def extractBuildInfo(build):
 
 def findFlakesInLog(log):
     FLAKES_START = re.compile('.*\[WARNING\]\s(Flakes:)')
-    FLAKES_END = re.compile('.*\[WARNING\]\sTests\srun:(.*)')
+    FLAKES_END = re.compile('.*\[ERROR|WARNING\]\sTests\srun:(.*)')
     FLAKY_TEST = re.compile('.*\[WARNING\]\s(.*)')
 
     flakesFound = False
