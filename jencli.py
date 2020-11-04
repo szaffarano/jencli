@@ -24,7 +24,7 @@ from datetime import datetime
 #
 # Remove the ones that aren't relevant.
 CASE_FIELDS_TO_REMOVE = ['testActions', 'errorStackTrace', 'stderr',
-                    'stdout', 'duration', 'failedSince', 'skipped', 'skippedMessage']
+                         'stdout', 'duration', 'failedSince', 'skipped', 'skippedMessage']
 
 # Same for health report
 HEALTH_FIELDS_TO_REMOVE = ['iconClassName', 'iconUrl']
@@ -56,16 +56,18 @@ def cli(ctx, url, user, token):
 @option('-j', '--jobname', metavar='<job name>', required=True,
         help='Jenkins job name.')
 @option('-b', '--buildnumber', metavar='<build number>', default='latest',
-        help='Jenkins build number, default latest job. It could be a number or a keyword: latest, last_N')
+        help='Jenkins build number, default latest job. It could be a number or one of the following expressions: latest, last_N, N..M')
 @option('-o', '--output', metavar='<output file>',
         help='Output file or stdout by default.')
 @option('-F', '--findflakes', is_flag=True, default=False)
 @pass_context
 def info(ctx, jobname, buildnumber, output, findflakes):
-    BUILD_NUMBER_PARSER = re.compile("^last_(?P<last>\d+)$|^(?P<num>\d+)$|^(?P<latest>latest)$")
+    BUILD_NUMBER_PARSER = re.compile(
+        '^last_(?P<last>\d+)$|^(?P<num>\d+)$|^(?P<latest>latest)$|^(?P<from>\d+)\.\.(?P<to>\d+)$')
 
+    buildFrom = -1
+    buildTo = -1
     server = ctx.obj['server']
-    buildsCount = -1
 
     projectReport = {
         'job': jobname
@@ -73,21 +75,32 @@ def info(ctx, jobname, buildnumber, output, findflakes):
 
     parsedBuildNumber = BUILD_NUMBER_PARSER.search(buildnumber)
     if parsedBuildNumber is None:
-        echo(s(f'Error: {buildnumber}: invalid format', fg="red", bold="true"))
+        echo(s(f'Error: {buildnumber}: invalid format', fg="red"))
         sys.exit(1)
-    elif parsedBuildNumber.group('num') is not None:
-        buildnumber = int(parsedBuildNumber.group('num'))
-    elif parsedBuildNumber.group('last') is not None:
-        buildsCount = int(parsedBuildNumber.group('last'))
-    elif parsedBuildNumber.group('latest') is not None:
-        buildsCount = 1
 
     try:
         jobInfo = server.get_job_info(jobname)
     except jenkins.JenkinsException:
         message = sys.exc_info()[1]
-        echo(f'Error: {s(str(message), fg="red", bold="true")}')
+        echo(f'Error: {s(str(message), fg="red")}')
         sys.exit(1)
+
+    if parsedBuildNumber.group('num') is not None:
+        buildFrom = int(parsedBuildNumber.group('num'))
+        buildTo = buildFrom
+    elif parsedBuildNumber.group('last') is not None:
+        buildTo = jobInfo.get('lastCompletedBuild', {}).get("number")
+        buildFrom = buildTo - int(parsedBuildNumber.group('last')) + 1
+    elif parsedBuildNumber.group('latest') is not None:
+        buildFrom = jobInfo.get('lastCompletedBuild', {}).get("number")
+        buildTo = buildFrom
+    elif parsedBuildNumber.group('from') is not None:
+        buildFrom = int(parsedBuildNumber.group('from'))
+        buildTo = int(parsedBuildNumber.group('to'))
+        if buildFrom > buildTo:
+            echo(
+                s(f'Error: {buildnumber}: "to" must be greater than "from"', fg="red"))
+            sys.exit(1)
 
     healthReport = []
     for hr in jobInfo.get('healthReport', {}):
@@ -95,16 +108,10 @@ def info(ctx, jobname, buildnumber, output, findflakes):
     projectReport.setdefault('healthReport', healthReport)
 
     builds = projectReport.setdefault('builds', [])
-    if buildsCount != -1:
-        buildnumber = jobInfo.get('lastCompletedBuild', {}).get("number")
-        while buildsCount > 0:
-            builds.append(buildReport(
-                jobname, buildnumber - buildsCount + 1, findflakes, server))
-            buildsCount = buildsCount - 1
-    else:
-        builds.append(
-            buildReport(jobname, buildnumber, findflakes, server)
-        )
+    while buildFrom <= buildTo:
+        builds.append(buildReport(
+            jobname, buildFrom, findflakes, server))
+        buildFrom = buildFrom + 1
 
     jsonReport = json.dumps(projectReport, indent=2)
     if output is not None:
@@ -169,17 +176,26 @@ def buildReport(jobName, buildNumber, findFlakes, server):
         "number": buildNumber
     }
 
-    build = server.get_build_info(jobName, buildNumber, depth=0)
+    try:
+        build = server.get_build_info(jobName, buildNumber, depth=0)
+    except jenkins.JenkinsException:
+        message = sys.exc_info()[1]
+        echo(f'Error: {s(str(message), fg="red")}')
+        sys.exit(1)
 
     buildReport.setdefault('info', extractBuildInfo(build))
     buildReport.setdefault('name', build.get("displayName"))
 
     testReport = server.get_build_test_report(jobName, buildNumber)
     if testReport is not None:
-        buildReport.setdefault('passTestsCount', testReport.get('passCount', 'N/A'))
-        buildReport.setdefault('failTestsCount', testReport.get('failCount', 'N/A'))
-        buildReport.setdefault('skipTestsCount', testReport.get('skipCount', 'N/A'))
-        buildReport.setdefault('testReportLink', f'{build.get("url")}testReport')
+        buildReport.setdefault(
+            'passTestsCount', testReport.get('passCount', 'N/A'))
+        buildReport.setdefault(
+            'failTestsCount', testReport.get('failCount', 'N/A'))
+        buildReport.setdefault(
+            'skipTestsCount', testReport.get('skipCount', 'N/A'))
+        buildReport.setdefault(
+            'testReportLink', f'{build.get("url")}testReport')
 
         if testReport.get('failCount', 0) > 0:
             failedCases = buildReport.setdefault('failedCases', [])
