@@ -23,11 +23,11 @@ from datetime import datetime
 #   'status', 'stderr', 'stdout'
 #
 # Remove the ones that aren't relevant.
-CASE_SKIP_FIELDS = ['testActions', 'errorStackTrace', 'stderr',
+CASE_FIELDS_TO_REMOVE = ['testActions', 'errorStackTrace', 'stderr',
                     'stdout', 'duration', 'failedSince', 'skipped', 'skippedMessage']
 
 # Same for health report
-HEALTH_SKIP_FIELDS = ['iconClassName', 'iconUrl']
+HEALTH_FIELDS_TO_REMOVE = ['iconClassName', 'iconUrl']
 
 CONTEXT_SETTINGS = dict(
     help_option_names=['-h', '--help'],
@@ -62,26 +62,25 @@ def cli(ctx, url, user, token):
 @option('-F', '--findflakes', is_flag=True, default=False)
 @pass_context
 def info(ctx, jobname, buildnumber, output, findflakes):
+    BUILD_NUMBER_PARSER = re.compile("^last_(?P<last>\d+)$|^(?P<num>\d+)$|^(?P<latest>latest)$")
+
     server = ctx.obj['server']
-    lastBuildsParser = re.compile('^last_([0-9]+)$')
-    buildNumberParser = re.compile('^([0-9]+)$')
-    lastBuildsToQuery = -1
+    buildsCount = -1
 
     projectReport = {
         'job': jobname
     }
 
-    buildNumberMatch = buildNumberParser.match(buildnumber)
-    lastBuildsMatch = lastBuildsParser.match(buildnumber)
-    if buildNumberMatch is not None:
-        buildnumber = int(buildNumberMatch.group(1))
-    elif lastBuildsMatch is not None:
-        lastBuildsToQuery = int(lastBuildsMatch.group(1))
-    elif buildnumber == 'latest':
-        lastBuildsToQuery = 1
-    else:
-        echo(f'Error: {s(buildnumber, fg="red", bold="true")}: invalid format')
+    parsedBuildNumber = BUILD_NUMBER_PARSER.search(buildnumber)
+    if parsedBuildNumber is None:
+        echo(s(f'Error: {buildnumber}: invalid format', fg="red", bold="true"))
         sys.exit(1)
+    elif parsedBuildNumber.group('num') is not None:
+        buildnumber = int(parsedBuildNumber.group('num'))
+    elif parsedBuildNumber.group('last') is not None:
+        buildsCount = int(parsedBuildNumber.group('last'))
+    elif parsedBuildNumber.group('latest') is not None:
+        buildsCount = 1
 
     try:
         jobInfo = server.get_job_info(jobname)
@@ -92,16 +91,16 @@ def info(ctx, jobname, buildnumber, output, findflakes):
 
     healthReport = []
     for hr in jobInfo.get('healthReport', {}):
-        healthReport.append(cleanup(hr, HEALTH_SKIP_FIELDS))
+        healthReport.append(cleanup(hr, HEALTH_FIELDS_TO_REMOVE))
     projectReport.setdefault('healthReport', healthReport)
 
     builds = projectReport.setdefault('builds', [])
-    if lastBuildsToQuery != -1:
+    if buildsCount != -1:
         buildnumber = jobInfo.get('lastCompletedBuild', {}).get("number")
-        while lastBuildsToQuery > 0:
+        while buildsCount > 0:
             builds.append(buildReport(
-                jobname, buildnumber - lastBuildsToQuery + 1, findflakes, server))
-            lastBuildsToQuery = lastBuildsToQuery - 1
+                jobname, buildnumber - buildsCount + 1, findflakes, server))
+            buildsCount = buildsCount - 1
     else:
         builds.append(
             buildReport(jobname, buildnumber, findflakes, server)
@@ -165,33 +164,35 @@ def findFlakesInLog(log):
     return flakes
 
 
-def buildReport(jobname, buildnumber, findflakes, server):
-    buildReport = {}
+def buildReport(jobName, buildNumber, findFlakes, server):
+    buildReport = {
+        "number": buildNumber
+    }
 
-    build = server.get_build_info(jobname, buildnumber, depth=0)
+    build = server.get_build_info(jobName, buildNumber, depth=0)
 
     buildReport.setdefault('info', extractBuildInfo(build))
     buildReport.setdefault('name', build.get("displayName"))
 
-    testReport = server.get_build_test_report(jobname, buildnumber)
+    testReport = server.get_build_test_report(jobName, buildNumber)
     if testReport is not None:
-        buildReport['passTestsCount'] = testReport.get('passCount', 'N/A')
-        buildReport['failTestsCount'] = testReport.get('failCount', 'N/A')
-        buildReport['skipTestsCount'] = testReport.get('skipCount', 'N/A')
-        buildReport['testReportLink'] = f'{build.get("url")}testReport'
+        buildReport.setdefault('passTestsCount', testReport.get('passCount', 'N/A'))
+        buildReport.setdefault('failTestsCount', testReport.get('failCount', 'N/A'))
+        buildReport.setdefault('skipTestsCount', testReport.get('skipCount', 'N/A'))
+        buildReport.setdefault('testReportLink', f'{build.get("url")}testReport')
 
         if testReport.get('failCount', 0) > 0:
             failedCases = buildReport.setdefault('failedCases', [])
             for suite in testReport.get('suites'):
                 failedCases += [
-                    cleanup(case, CASE_SKIP_FIELDS) for case in
+                    cleanup(case, CASE_FIELDS_TO_REMOVE) for case in
                     filter(lambda c: c.get('status') in [
                            'REGRESSION', 'FAILED'], suite.get('cases'))
                 ]
 
-    if findflakes:
+    if findFlakes:
         flakes = findFlakesInLog(
-            server.get_build_console_output(jobname, buildnumber))
+            server.get_build_console_output(jobName, buildNumber))
         if len(flakes) > 0:
             buildReport.setdefault("flakes", flakes)
 
