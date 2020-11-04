@@ -1,0 +1,9 @@
+output application/csv separator=";", header=false
+---
+flatten (
+  payload.builds map ((build) -> (build.flakes default []) map ( (flake) ->  {
+          'branch': build.name replace /^.*:(.*)\sValidation.*/ with $[1],
+          'test': flake replace /^.*\((.*)\).*$/ with $[1]
+        })
+  )
+)

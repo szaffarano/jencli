@@ -1,0 +1,14 @@
+output application/json
+---
+(payload.builds filter (build, idx) ->
+  (build.failTestsCount default 0) > 0 or sizeOf(build.flakes default[]) > 0
+) map (
+  (build) -> {
+    'branch': build.name replace /^.*:(.*)\sValidation.*/ with $[1],
+    'name': build.name, 
+    'date': build.info.date , 
+    'url': build.info.url, 
+    'failed': build.failTestsCount,  
+    'flakes': sizeOf(build.flakes default []) 
+  }
+)
