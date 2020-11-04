@@ -33,7 +33,7 @@ Options:
   -b, --buildnumber <build number>
                                   Jenkins build number, default latest job. It
                                   could be a number or one of the following
-                                  expressions: latest, last_N, N..M
+                                  expressions: latest, last_N, N..M, N..latest
 
   -o, --output <output file>      Output file or stdout by default.
   -F, --findflakes

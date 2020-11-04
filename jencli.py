@@ -56,14 +56,14 @@ def cli(ctx, url, user, token):
 @option('-j', '--jobname', metavar='<job name>', required=True,
         help='Jenkins job name.')
 @option('-b', '--buildnumber', metavar='<build number>', default='latest',
-        help='Jenkins build number, default latest job. It could be a number or one of the following expressions: latest, last_N, N..M')
+        help='Jenkins build number, default latest job. It could be a number or one of the following expressions: latest, last_N, N..M, N..latest')
 @option('-o', '--output', metavar='<output file>',
         help='Output file or stdout by default.')
 @option('-F', '--findflakes', is_flag=True, default=False)
 @pass_context
 def info(ctx, jobname, buildnumber, output, findflakes):
     BUILD_NUMBER_PARSER = re.compile(
-        '^last_(?P<last>\d+)$|^(?P<num>\d+)$|^(?P<latest>latest)$|^(?P<from>\d+)\.\.(?P<to>\d+)$')
+        '^last_(?P<last>\d+)$|^(?P<num>\d+)$|^(?P<latest>latest)$|^(?P<from>\d+)\.\.((?P<to>\d+)|latest)$')
 
     buildFrom = -1
     buildTo = -1
@@ -96,11 +96,14 @@ def info(ctx, jobname, buildnumber, output, findflakes):
         buildTo = buildFrom
     elif parsedBuildNumber.group('from') is not None:
         buildFrom = int(parsedBuildNumber.group('from'))
-        buildTo = int(parsedBuildNumber.group('to'))
-        if buildFrom > buildTo:
-            echo(
-                s(f'Error: {buildnumber}: "to" must be greater than "from"', fg="red"), err=True)
-            sys.exit(1)
+        if parsedBuildNumber.group('to'):
+            buildTo = int(parsedBuildNumber.group('to'))
+            if buildFrom > buildTo:
+                echo(
+                    s(f'Error: {buildnumber}: "to" must be greater than "from"', fg="red"), err=True)
+                sys.exit(1)
+        else:
+            buildTo = jobInfo.get('lastCompletedBuild', {}).get("number")
 
     healthReport = []
     for hr in jobInfo.get('healthReport', {}):
@@ -108,9 +111,9 @@ def info(ctx, jobname, buildnumber, output, findflakes):
     projectReport.setdefault('healthReport', healthReport)
 
     builds = projectReport.setdefault('builds', [])
-    while buildFrom <= buildTo:
-        report = buildReport(jobname, buildFrom, findflakes, server)
-        buildFrom = buildFrom + 1
+    while buildTo >= buildFrom:
+        report = buildReport(jobname, buildTo, findflakes, server)
+        buildTo = buildTo - 1
         if report is not None:
             builds.append(report)
 
