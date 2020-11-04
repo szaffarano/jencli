@@ -75,7 +75,7 @@ def info(ctx, jobname, buildnumber, output, findflakes):
 
     parsedBuildNumber = BUILD_NUMBER_PARSER.search(buildnumber)
     if parsedBuildNumber is None:
-        echo(s(f'Error: {buildnumber}: invalid format', fg="red"))
+        echo(s(f'Error: {buildnumber}: invalid format', fg="red"), err=True)
         sys.exit(1)
 
     try:
@@ -99,7 +99,7 @@ def info(ctx, jobname, buildnumber, output, findflakes):
         buildTo = int(parsedBuildNumber.group('to'))
         if buildFrom > buildTo:
             echo(
-                s(f'Error: {buildnumber}: "to" must be greater than "from"', fg="red"))
+                s(f'Error: {buildnumber}: "to" must be greater than "from"', fg="red"), err=True)
             sys.exit(1)
 
     healthReport = []
@@ -109,9 +109,10 @@ def info(ctx, jobname, buildnumber, output, findflakes):
 
     builds = projectReport.setdefault('builds', [])
     while buildFrom <= buildTo:
-        builds.append(buildReport(
-            jobname, buildFrom, findflakes, server))
+        report = buildReport(jobname, buildFrom, findflakes, server)
         buildFrom = buildFrom + 1
+        if report is not None:
+            builds.append(report)
 
     jsonReport = json.dumps(projectReport, indent=2)
     if output is not None:
@@ -172,7 +173,7 @@ def findFlakesInLog(log):
 
 
 def buildReport(jobName, buildNumber, findFlakes, server):
-    buildReport = {
+    report = {
         "number": buildNumber
     }
 
@@ -180,25 +181,25 @@ def buildReport(jobName, buildNumber, findFlakes, server):
         build = server.get_build_info(jobName, buildNumber, depth=0)
     except jenkins.JenkinsException:
         message = sys.exc_info()[1]
-        echo(f'Error: {s(str(message), fg="red")}')
-        sys.exit(1)
+        echo(f'Error: {s(str(message), fg="red")}', err=True)
+        return None
 
-    buildReport.setdefault('info', extractBuildInfo(build))
-    buildReport.setdefault('name', build.get("displayName"))
+    report.setdefault('info', extractBuildInfo(build))
+    report.setdefault('name', build.get("displayName"))
 
     testReport = server.get_build_test_report(jobName, buildNumber)
     if testReport is not None:
-        buildReport.setdefault(
+        report.setdefault(
             'passTestsCount', testReport.get('passCount', 'N/A'))
-        buildReport.setdefault(
+        report.setdefault(
             'failTestsCount', testReport.get('failCount', 'N/A'))
-        buildReport.setdefault(
+        report.setdefault(
             'skipTestsCount', testReport.get('skipCount', 'N/A'))
-        buildReport.setdefault(
+        report.setdefault(
             'testReportLink', f'{build.get("url")}testReport')
 
         if testReport.get('failCount', 0) > 0:
-            failedCases = buildReport.setdefault('failedCases', [])
+            failedCases = report.setdefault('failedCases', [])
             for suite in testReport.get('suites'):
                 failedCases += [
                     cleanup(case, CASE_FIELDS_TO_REMOVE) for case in
@@ -210,6 +211,6 @@ def buildReport(jobName, buildNumber, findFlakes, server):
         flakes = findFlakesInLog(
             server.get_build_console_output(jobName, buildNumber))
         if len(flakes) > 0:
-            buildReport.setdefault("flakes", flakes)
+            report.setdefault("flakes", flakes)
 
-    return buildReport
+    return report
