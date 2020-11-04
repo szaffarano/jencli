@@ -9,7 +9,7 @@ $ pip3 install https://github.com/szaffarano/jencli/archive/main.zip
 ## Usage
 
 ```sh
-⟩ jencli -h
+$ jencli -h
 Usage: jencli [OPTIONS] COMMAND [ARGS]...
 
 Options:
@@ -25,55 +25,79 @@ Commands:
 ### Info
 
 ```sh
-⟩ jencli info -h
+$ jencli info --help
 Usage: jencli info [OPTIONS]
 
 Options:
-  -j <jenkins job name>       Jenkins job name.  [required]
-  -n <jenkins job number>     Jenkins job number, default latest job.
-  -o, --output <output file>  Output file or stdout by default.
-  -v, --verbose
-  -h, --help                  Show this message and exit.
+  -j, --jobname <job name>        Jenkins job name.  [required]
+  -b, --buildnumber <build number>
+                                  Jenkins build number, default latest job. It
+                                  could be a number or one of the following
+                                  expressions: latest, last_N, N..M
+
+  -o, --output <output file>      Output file or stdout by default.
+  -F, --findflakes
+  -h, --help                      Show this message and exit.
 
 $ export JENKINS_URL=<jenkins url>
 $ export JENKINS_USERNAME=<user>
 $ export JENKINS_TOKEN=<access token>
-$ jencli info -j <job name>
+$ jencli info -j <job name> -b last_2
 {
-  "job": "job name",
-  "lastCompletedBuild": {
-    "date": "Oct 23 2020 00:25:58",
-    "url": "<url>",
-    "result": "UNSTABLE"
-  },
+  "job": "<job name>",
   "healthReport": [
     {
-      "description": "Test Result: 2 tests failing out of a total of NNN tests.",
-      "score": 99
-    },
-    {
-      "description": "Build stability: No recent builds failed.",
+      "description": "...",
       "score": 100
     }
   ],
-  "passTestsCount": N,
-  "failTestsCount": M,
-  "skipTestsCount": P,
-  "testReportLink": "...",
-  "failedCases": [
+  "builds": [
     {
-      "age": 1,
-      "className": "....",
-      "errorDetails": "....",
-      "name": "....",
-      "status": "FAILED"
+      "number": NNNN,
+      "info": {
+        "date": "...",
+        "url": "...",
+        "result": "SUCCESS"
+      },
+      "name": "...",
+      "passTestsCount": NNNN,
+      "failTestsCount": NNNN,
+      "skipTestsCount": NNNN,
+      "testReportLink": "...",
+      "flakes": [
+        "...",
+        "..."
+      ]
     },
     {
-      "age": 2,
-      "className": "....",
-      "errorDetails": "....",
-      "name": "....",
-      "status": "FAILED"
+      "number": MMMM,
+      "info": {
+        "date": "...",
+        "url": "...",
+        "result": "UNSTABLE"
+      },
+      "name": "...",
+      "passTestsCount": MMMM,
+      "failTestsCount": MMMM,
+      "skipTestsCount": 8MMMM,
+      "testReportLink": "...",
+      "failedCases": [
+        {
+          "age": k,
+          "className": "....",
+          "errorDetails": "....",
+          "name": "....",
+          "status": "REGRESSION"
+        },
+        {
+          "age": p,
+          "className": "...",
+          "errorDetails": "...",
+          "name": "...",
+          "status": "REGRESSION"
+        }
+      ]
     }
   ]
 }
+```
