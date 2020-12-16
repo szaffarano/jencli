@@ -14,7 +14,7 @@ import sys
 import io
 import re
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 # A test case has the following properties:
@@ -176,16 +176,24 @@ def findFlakesInLog(log):
 
 
 def buildReport(jobName, buildNumber, findFlakes, server):
-    report = {
-        "number": buildNumber
-    }
-
     try:
         build = server.get_build_info(jobName, buildNumber, depth=0)
     except jenkins.JenkinsException:
         message = sys.exc_info()[1]
         echo(f'Error: {s(str(message), fg="red")}', err=True)
         return None
+
+    duration = timedelta(milliseconds=build.get('duration'))
+    secs = duration.total_seconds() % (24 * 3600)
+    hours = secs // 3600
+    secs %= 3600
+    mins = secs // 60
+    secs %= 60
+
+    report = {
+        "number": buildNumber,
+        'duration': f'{int(hours)}:{int(mins)}:{int(secs)}'
+    }
 
     report.setdefault('info', extractBuildInfo(build))
     report.setdefault('name', build.get("displayName"))
