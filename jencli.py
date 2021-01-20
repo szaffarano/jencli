@@ -151,12 +151,15 @@ def findFlakesInLog(log):
     FLAKES_START = re.compile('.*\[WARNING\]\s(Flakes:)')
     FLAKES_END = re.compile('.*(\[ERROR\]|\[WARNING\])\sTests\srun:(.*)')
     FLAKY_TEST = re.compile('.*\[WARNING\]\s(.*)')
+    RETRIED_RUN = re.compile('.*\[ERROR\].*Run\s([0-9]):\s(.*):\d+.*')
 
     flakesFound = False
     flakes = []
+    failedRetries = {}
     for line in io.StringIO(log).readlines():
         line = line.replace('\n', '')
 
+        retriedRun = RETRIED_RUN.match(line)
         if flakesFound:
             if FLAKES_END.match(line) is not None:
                 flakesFound = False
@@ -168,11 +171,13 @@ def findFlakesInLog(log):
             if flakesFound:
                 raise Exception("Already detected a flakes start.")
             flakesFound = True
+        elif retriedRun is not None:
+            failedRetries[retriedRun.groups()[1]] = retriedRun.groups()[0]
 
     if flakesFound:
         raise Exception("Inconsistent flakes report.")
 
-    return flakes
+    return (flakes, failedRetries)
 
 
 def buildReport(jobName, buildNumber, findFlakes, server):
@@ -219,9 +224,11 @@ def buildReport(jobName, buildNumber, findFlakes, server):
                 ]
 
     if findFlakes:
-        flakes = findFlakesInLog(
+        (flakes, failedRetries) = findFlakesInLog(
             server.get_build_console_output(jobName, buildNumber))
         if len(flakes) > 0:
             report.setdefault("flakes", flakes)
+        if len(failedRetries) > 0:
+            report.setdefault("failedRetries", failedRetries)
 
     return report
